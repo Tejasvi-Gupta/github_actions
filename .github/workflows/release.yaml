@@ -1,0 +1,22 @@
+name: Release Workflow
+on:
+  # push:
+  #   branches:
+  #     - master
+  # schedule:
+  #   - cron: "0 9 * * Mon"
+  workflow_dispatch:
+
+jobs:
+  watch:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Print the event name
+        run: 'echo "This workflow was triggered by a(n) ${{ github.event_name }} event."'
+
+      - name: Current date and time
+        run: 'echo "Current date and time: $(date)"'
+
+      - name: Final
+        run: 'echo " Release workflow complete"'
+  
