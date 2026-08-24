@@ -1,5 +1,5 @@
 name: Using Expressions
-run-name: Using Expressions | DEBUG -${{inputs.debug && 'ON' || 'OF'}}
+run-name: Using Expressions | DEBUG -${{inputs.debug && 'ON' || 'OFF'}}
 
 on:
     workflow_dispatch:
@@ -23,7 +23,7 @@ jobs:
                 echo "Workflow: ${{github.workflow}}"
             - name: '[Debug] print when triggered from main'
               if: inputs.debug && github.ref_name == 'main'
-              run: echo "This workflow ws triggered from the main branch"
+              run: echo "This workflow was triggered from the main branch"
             - name: Greeting
               run: echo "Hello, ${{github.actor}}! Welcome to the using Expressions workflow"
 
