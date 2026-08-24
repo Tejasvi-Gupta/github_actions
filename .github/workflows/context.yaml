@@ -29,14 +29,6 @@ jobs:
               run: |
                 echo "Variable value: ${{ env.MY_VAR }}"
 
-                        - name: Display environment variables
-                        env: 
-                            MY_OVERWRITTEN_VAR: 'step'
-                        run:|
-                            echo "MY_WORKFLOW_VAR: $MY_WORKFLOW_VAR"
-                            echo "MY_JOB_VAR: $MY_JOB_VAR"
-                            echo "MY_OVERWRITTEN_VAR: $MY_OVERWRITTEN_VAR"
-
             - name: Display environment variables
               run: |
                 echo "MY_WORKFLOW_VAR: $MY_WORKFLOW_VAR"
@@ -50,4 +42,3 @@ jobs:
                 echo "MY_WORKFLOW_VAR: $MY_WORKFLOW_VAR"
                 echo "MY_JOB_VAR: $MY_JOB_VAR"
                 echo "MY_OVERWRITTEN_VAR: $MY_OVERWRITTEN_VAR"
-
