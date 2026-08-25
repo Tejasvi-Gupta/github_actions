@@ -27,7 +27,7 @@ jobs:
 
             - name: Retrieve variable value
               run: |
-                echo "Variable value: ${{ env.MY_VAR }}"
+                echo "Variable value: ${{ vars.MY_VAR }}"
 
             - name: Display environment variables
               run: |
