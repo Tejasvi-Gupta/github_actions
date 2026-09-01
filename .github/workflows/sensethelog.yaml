@@ -28,6 +28,6 @@ jobs:
     if: failure()   # only runs when build fails
     steps:
       - name: Analyze with SenseTheLog
-        uses: sensethelog/github-action@main
+        uses: sensethelog/action@v1
         with:
           sensethelog-api-key: ${{ secrets.SENSETHELOG_API_KEY }}   # auth to SenseTheLog's API, separate from GITHUB_TOKEN permissions above
