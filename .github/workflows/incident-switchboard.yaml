@@ -1,0 +1,230 @@
+name: Incident Switchboard
+
+# Triggers: on push, PR, and manual dispatch
+on:
+  # push:
+  #   branches:
+  #     - main
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch:
+    inputs:
+      severity:
+        description: 'Incident severity level'
+        required: true
+        default: 'low'
+        type: choice
+        options:
+          - low
+          - medium
+          - high
+      deep_scan:
+        description: 'Run deep scan?'
+        required: false
+        type: boolean
+        default: false
+      skip_tests:
+        description: 'Skip test suite?'
+        required: false
+        type: boolean
+        default: false
+      reason:
+        description: 'Reason for manual run'
+        required: false
+        type: string
+
+# Set run title dynamically
+run-name: ${{ github.event_name == 'workflow_dispatch' && format('{0}{1}', github.event.inputs.severity, github.event.inputs.deep_scan == 'true' && ' SCAN' || '') || format('{0} - {1}', github.event_name, github.ref_name) }}
+
+env:
+  NODE_WORKING_DIR: react-app
+
+jobs:
+  # JOB 1: TRIAGE - Always runs, prints incident information
+  triage:
+    runs-on: ubuntu-latest
+    outputs:
+      tests_needed: ${{ steps.set-outputs.outputs.tests_needed }}
+      scan_needed: ${{ steps.set-outputs.outputs.scan_needed }}
+    steps:
+      - name: Print basic incident information
+        run: |
+          echo "========== INCIDENT SWITCHBOARD ACTIVATED =========="
+          echo "Event Type: ${{ github.event_name }}"
+          echo "Branch/Ref: ${{ github.ref }}"
+          echo "Triggered by: ${{ github.actor }}"
+          echo "Run Number: ${{ github.run_number }}"
+          echo ""
+
+      - name: Print manual dispatch details (if applicable)
+        if: github.event_name == 'workflow_dispatch'
+        run: |
+          echo "========== MANUAL DISPATCH DETAILS =========="
+          echo "Severity Level: ${{ github.event.inputs.severity }}"
+          echo "Deep Scan Requested: ${{ github.event.inputs.deep_scan }}"
+          echo "Skip Tests: ${{ github.event.inputs.skip_tests }}"
+          echo "Reason Provided: ${{ github.event.inputs.reason }}"
+          echo ""
+
+      - name: Print automatic run message
+        if: github.event_name != 'workflow_dispatch'
+        run: |
+          echo "========== AUTOMATIC RUN =========="
+          echo "This run was triggered automatically (push or pull request)"
+          echo "No manual reason was supplied"
+          echo ""
+
+      - name: Print severity-specific message
+        run: |
+          SEVERITY="${{ github.event_name == 'workflow_dispatch' && github.event.inputs.severity || 'low' }}"
+          if [ "$SEVERITY" = "low" ]; then
+            echo "⚠️  LOW SEVERITY: Minor issue detected. Standard response activated."
+          elif [ "$SEVERITY" = "medium" ]; then
+            echo "⚠️⚠️  MEDIUM SEVERITY: Notable issue detected. Enhanced monitoring enabled."
+          elif [ "$SEVERITY" = "high" ]; then
+            echo "⚠️⚠️⚠️  HIGH SEVERITY: Critical issue detected. Full diagnostic mode enabled."
+          fi
+          echo ""
+
+      - name: Determine which jobs to run
+        id: set-outputs
+        run: |
+          IS_MANUAL="${{ github.event_name == 'workflow_dispatch' }}"
+          SKIP_TESTS="${{ github.event.inputs.skip_tests }}"
+          DEEP_SCAN="${{ github.event.inputs.deep_scan }}"
+          SEVERITY="${{ github.event.inputs.severity }}"
+          
+          # Tests run unless explicitly skipped (and only for manual dispatch)
+          if [ "$IS_MANUAL" = "true" ] && [ "$SKIP_TESTS" = "true" ]; then
+            echo "tests_needed=false" >> $GITHUB_OUTPUT
+          else
+            echo "tests_needed=true" >> $GITHUB_OUTPUT
+          fi
+          
+          # Scan runs if deep_scan is true OR severity is high
+          if [ "$IS_MANUAL" = "true" ]; then
+            if [ "$DEEP_SCAN" = "true" ] || [ "$SEVERITY" = "high" ]; then
+              echo "scan_needed=true" >> $GITHUB_OUTPUT
+            else
+              echo "scan_needed=false" >> $GITHUB_OUTPUT
+            fi
+          else
+            # For automatic runs (push/PR), don't run scan
+            echo "scan_needed=false" >> $GITHUB_OUTPUT
+          fi
+
+  # JOB 2: TESTS - Runs after triage, can be skipped for manual dispatch
+  tests:
+    runs-on: ubuntu-latest
+    needs: triage
+    if: needs.triage.outputs.tests_needed == 'true'
+    defaults:
+      run:
+        working-directory: ${{ env.NODE_WORKING_DIR }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v7
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: '24.x'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run test suite
+        run: npm run test -- --watchAll=false --passWithNoTests
+
+  # JOB 3: SCAN - Runs if deep_scan requested OR severity is high
+  scan:
+    runs-on: ubuntu-latest
+    needs: triage
+    if: needs.triage.outputs.scan_needed == 'true'
+    steps:
+      - name: Install jq
+        run: sudo apt-get update && sudo apt-get install -y jq
+
+      - name: Create scan report
+        run: |
+          IS_MANUAL="${{ github.event_name == 'workflow_dispatch' }}"
+          DEEP_SCAN="${{ github.event.inputs.deep_scan }}"
+          SEVERITY="${{ github.event.inputs.severity }}"
+          
+          # Create scan.json with diagnostic information
+          cat > scan.json << EOF
+          {
+            "severity": "$SEVERITY",
+            "deep_scan": $DEEP_SCAN,
+            "actor": "${{ github.actor }}",
+            "run_number": ${{ github.run_number }},
+            "timestamp_utc": "$(date -u +'%Y-%m-%dT%H:%M:%SZ')"
+          }
+          EOF
+          
+          echo "✓ Scan report created"
+
+      - name: Read scan report with jq
+        run: |
+          echo "Extracting diagnostic values..."
+          SEVERITY=$(jq -r '.severity' scan.json)
+          TIMESTAMP=$(jq -r '.timestamp_utc' scan.json)
+          
+          echo "Severity from scan: $SEVERITY"
+          echo "Scan timestamp: $TIMESTAMP"
+
+  # JOB 4: REPORT - Runs after tests and scan, reports final status
+  report:
+    runs-on: ubuntu-latest
+    needs: [triage, tests, scan]
+    if: always()
+    steps:
+      - name: Report test job status
+        run: |
+          TEST_STATUS="${{ needs.tests.result }}"
+          
+          if [ "$TEST_STATUS" = "success" ]; then
+            echo "✅ Tests: PASSED"
+          elif [ "$TEST_STATUS" = "skipped" ]; then
+            echo "⏭️  Tests: SKIPPED"
+          else
+            echo "❌ Tests: FAILED"
+          fi
+
+      - name: Report scan job status
+        run: |
+          SCAN_STATUS="${{ needs.scan.result }}"
+          
+          if [ "$SCAN_STATUS" = "success" ]; then
+            echo "✅ Scan: COMPLETED"
+          elif [ "$SCAN_STATUS" = "skipped" ]; then
+            echo "⏭️  Scan: NOT REQUESTED"
+          else
+            echo "❌ Scan: FAILED"
+          fi
+
+      - name: Print final summary
+        run: |
+          TEST_STATUS="${{ needs.tests.result }}"
+          SCAN_STATUS="${{ needs.scan.result }}"
+          
+          echo ""
+          echo "========== INCIDENT SWITCHBOARD SUMMARY =========="
+          
+          # Check if all jobs succeeded
+          if [ "$TEST_STATUS" = "success" ] && [ "$SCAN_STATUS" = "success" ]; then
+            echo "✅ ALL CHECKS PASSED - System healthy"
+          elif [ "$TEST_STATUS" = "success" ] && [ "$SCAN_STATUS" = "skipped" ]; then
+            echo "✅ TESTS PASSED - Scan not required"
+          elif [ "$TEST_STATUS" = "skipped" ] && [ "$SCAN_STATUS" = "success" ]; then
+            echo "✅ SCAN COMPLETED - Tests skipped"
+          elif [ "$TEST_STATUS" = "skipped" ] && [ "$SCAN_STATUS" = "skipped" ]; then
+            echo "⚠️  LIMITED CHECKS - Minimal diagnostics only"
+          else
+            echo "⚠️  ISSUES DETECTED - Review failed checks"
+          fi
+          
+          echo ""
+          echo "Switchboard closed"
+          echo "=================================================="
